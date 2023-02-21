@@ -1,6 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const Post = require("../models/post");
+const User = require("../models/user");
 // sending a status code is a must and that's because we want to inform the client about any error happens;
 /*
 status code {
@@ -59,17 +60,27 @@ exports.createPost = (req, res, next) => {
   // const imageUrl = req.file.path.replace("\\", "/");
   const title = req.body.title;
   const content = req.body.content;
+  let creator;
   const post = new Post({
     title,
     content,
-    creator: { name: "Omar" },
+    creator: req.userId,
   });
   post
     .save()
     .then((result) => {
+      return User.findById(req.userId);
+    })
+    .then((user) => {
+      creator = user;
+      user.posts.push(post);
+      return user.save();
+    })
+    .then((result) => {
       res.status(201).json({
         message: "Post Created Successfully",
-        post: result,
+        post: post,
+        creator: { _id: creator._id, name: creator.name },
       });
     })
     .catch((err) => {
@@ -125,6 +136,11 @@ exports.updatePost = (req, res, next) => {
         error.statusCode = 404;
         throw error; // will through to the catch
       }
+      if (post.creator.toString() !== req.userId) {
+        const error = new Error("Not Authorized!");
+        error.statusCode = 403;
+        throw error;
+      }
       // if (imageUrl !== post.imageUrl) {
       //   // clearImage(post.imageUrl);
       // }
@@ -159,10 +175,23 @@ exports.deletePost = (req, res, next) => {
         error.statusCode = 404;
         throw error;
       }
+
+      if (post.creator.toString() !== req.userId) {
+        const error = new Error("Not Authorized!");
+        error.statusCode = 403;
+        throw error;
+      }
+
       return Post.findByIdAndRemove(postId);
     })
     .then((result) => {
-      console.log(result);
+      return User.findById(req.userId);
+    })
+    .then((user) => {
+      user.posts.pull(postId);
+      return user.save();
+    })
+    .then((result) => {
       res.status(200).json({ message: "Posted Deleted Successfully" });
     })
     .catch((err) => {
